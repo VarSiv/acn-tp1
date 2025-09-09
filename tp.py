@@ -1,6 +1,10 @@
 from typing import *
+from tools_visualizacion import *
 import random
+import pygame
 import numpy as np
+import json
+from pathlib import Path
 
 class Avion:
     def __init__(self,id ,velocidad:float, distancia:float, franja:int, t:float, m_atterizaje:float):
@@ -33,27 +37,33 @@ class Avion:
     
     def actualizar(self):
         avance = self.velocidad * 1/60
-        self.distancia = (self.distancia - avance)
+        self.distancia = max(0,self.distancia - avance)
+
         if self.distancia  >= (100*1.852):
-            self.velocidad= 500*1.852
             self.franja_temporal = 5
         elif self.distancia < (100*1.852) and self.distancia >= (50*1.852):
-             self.velocidad= 300*1.852
              self.franja_temporal = 4
         elif self.distancia < (50*1.852) and self.distancia >= (15*1.852):
-             self.velocidad= 250*1.852
              self.franja_temporal = 3
         elif self.distancia < (15*1.852) and self.distancia >= (5*1.852):
-             self.velocidad= 200*1.852
              self.franja_temporal = 2
         elif self.distancia < (5*1.852): 
-             self.velocidad= 150*1.852
              self.franja_temporal = 1
+
+    def actualizar_velocidad(self):
+        if self.franja_temporal  == 4:
+            self.set_velocidad(300*1.852)
+        if self.franja_temporal  == 3:
+            self.set_velocidad(250*1.852)
+        elif self.franja_temporal  == 2:
+            self.set_velocidad(200*1.852)
+        elif self.franja_temporal  == 1:
+            self.set_velocidad(150*1.852)
+     
     
-    #Nuevo
     def set_tiempoAep(self, t: float):
         self.tiempoAep = t
-    #Nuevo
+
     def get_tiempoAep(self):
         return self.tiempoAep
     
@@ -73,7 +83,7 @@ def calcular_tiempo_aep(avion):
             tiempo += (((avion.get_distancia()-franjas[i])/avion.get_velocidad())*60)
         else:
             tiempo+=tiempos_franjas[i]
-    #Nuevo
+    
     avion.set_tiempoAep(tiempo)
     return tiempo
        
@@ -83,15 +93,14 @@ def calcular_dist_entre_aviones(lista):
     distancias=[]
     deben_ser_reubicados=[]
     for elem in range(len(lista)):
-       if elem ==0: #Osea es el primer avion
+       if elem ==0: # primer avion
             distancias.append(calcular_tiempo_aep(lista[elem]))
 
        else:
             distancias.append(calcular_tiempo_aep(lista[elem]))
             if (abs(lista[elem-1].get_tiempoAep() - lista[elem].get_tiempoAep()))<4:
                 deben_ser_reubicados.append(elem)
-        
-    #Si reubicamos tenemos que recalcular todo esto        
+             
     return distancias, deben_ser_reubicados   
 
 def debajo_minimo_de_franja(avion):
@@ -99,7 +108,6 @@ def debajo_minimo_de_franja(avion):
     v=avion.get_velocidad()
     ret=False
     if f==1 and v<120*1.852:
-        #avion.set_franja=1
         ret=True
     elif f==2 and v<150*1.852:
         ret=True
@@ -114,22 +122,23 @@ def reubicar(fila_aviones, deben_ser_reubicados):
     #Antes de acutalizar las posiciones de los avione
     #movemos por minuto 
     for i in deben_ser_reubicados:
-        fila_aviones[i].set_velocidad((fila_aviones[i].get_velocidad() - 20*1.852))      # tiempo = distancia / velocidad 
-        if(debajo_minimo_de_franja( fila_aviones[i])):
-            fila_aviones[i].set_velocidad(-200*1.852)
+        fila_aviones[i].set_velocidad((fila_aviones[i].get_velocidad() - 20*1.852))      # Se reduce en veinte nudos la velocidad
+        if(debajo_minimo_de_franja(fila_aviones[i])):
+            fila_aviones[i].set_velocidad(-200*1.852)                                     # Al estar por debajo del minimo de la franja se debe , retroceder 
         #avion como indice
-        if not (i==0 or i==len(fila_aviones)-1): 
-            if((fila_aviones[i+1].get_distancia()-fila_aviones[i])>5 and fila_aviones[i].get_distancia()-fila_aviones[i-1]>5):
+        if not (i==0 or i==len(fila_aviones)-1): #Este caso es para analizar si un avion se puede ubicar entre dos aviones dados los requisitos. 
+            if((fila_aviones[i+1].get_tiempoAep()-fila_aviones[i].get_tiempoAep())>5 and fila_aviones[i].get_tiempoAep()-fila_aviones[i-1].get_tiempoAep()>5):
                 vel_max_de_franja=franjas_y_vel_maxima[fila_aviones[i].get_franja()]
                 fila_aviones[i].set_velocidad(vel_max_de_franja)
 
-            else: #va a montevideo
-                fila_aviones.remove(fila_aviones[i])
-
-
-        else: #Este caso es para analizar si se tiene que reubicar el ultimo avion
-            fila_aviones.remove(fila_aviones[i]) 
+        elif i==len(fila_aviones)-1: #Este caso es para analizar si se tiene que actualizar el ultimo avion que bajo de velocidad en 20 nudos al tener ya mas de 5 minutos de distancia. 
+            if( fila_aviones[i].get_tiempoAep()-fila_aviones[i-1].get_tiempoAep()>5):
+                vel_max_de_franja=franjas_y_vel_maxima[fila_aviones[i].get_franja()]
+                fila_aviones[i].set_velocidad(vel_max_de_franja)
         
+        if(fila_aviones[i].get_distancia() > 100*1.852): #va a montevideo
+            fila_aviones.remove(fila_aviones[i])
+            
     return 
 
 
@@ -137,21 +146,32 @@ def reubicar(fila_aviones, deben_ser_reubicados):
 #Ejercicio 1
 rangoSim= 10
 rangoHorario = 18
-p= 1/60
-id=1
-#cant_arribados=0
-##cant_arribos_por_hora = np.zeros((rangoSim, rangoHorario))) ## Matriz de conteos: filas = simulaciones, columnas = horas (6..23)
-for simulacion in range(rangoSim):  
-    fila_aviones: List[Avion] = []
+p= 1/2
 
+cant_arribados=0
+cant_arribos_por_hora = np.zeros((rangoSim, rangoHorario)) ## Matriz de conteos: filas = simulaciones, columnas = horas (6..23)
+cant_aviones_a_montevideo = np.zeros((rangoSim, rangoHorario)) ## Matriz de conteos: filas = simulaciones, columnas = cantidad fueron a Montevideo en la i hora ( 6..23)
+
+for simulacion in range(rangoSim):  
+    id=1
+    fila_aviones: List[Avion] = []
+    acc_time = 6 * 60.0
     for m in range(round(rangoHorario/(1/60))):
         # 1) actualizar todos
+        llegados=[]
         for avion in fila_aviones:
             avion.actualizar()
             ##Quitar aquellos que ya llegaron de la lista y sumarlos al contador. 
-            #if avion.get_tiempoAep==0 or avion.get_distancia<=0:
-                #fila_aviones.remove(avion)
-                #cant_arribados+=1
+            
+            if avion.get_tiempoAep()==0 or avion.get_distancia()<=0:
+                llegados.append(avion)
+                cant_arribados+=1
+            #calculamos los que se tienen que reubicar
+            if avion not in deben_ser_reubicados:
+                avion.actualizar_velocidad()
+            
+        for avion in llegados: #Para evitar recorrer una lista como fila_aviones que vamos modificando en la linea 154
+            fila_aviones.remove(avion)
 
         fila_aviones.sort()
 
@@ -165,32 +185,28 @@ for simulacion in range(rangoSim):
 
         # 3) reubicar si hace falta
         distancias, deben_ser_reubicados = calcular_dist_entre_aviones(fila_aviones) 
-            # antes de reubicar
-        # pre_montevideo=len(fila_aviones)
+        # antes de reubicar
+        pre_montevideo=len(fila_aviones)
         reubicar(fila_aviones, deben_ser_reubicados)
-            # post de reubicar: len(fila_aviones)
-        # fueron_a_montevideo=len(fila_aviones)-pre_montevideo
+        # post de reubicar: len(fila_aviones)
+        fueron_a_montevideo=pre_montevideo-len(fila_aviones)
         
         for avion in fila_aviones:
-            index = fila_aviones.index(avion)
-            print("Simulacion: ", simulacion, "minuto", m, "avion", index, "velocidad", avion.get_velocidad())
+            print("Simulacion:",simulacion, " minuto:",m, " avion:",avion.id, " velocidad:",avion.get_velocidad())
         print("-"*20)
 
         
         # 4) registrar arribos en la matriz y remover los llegados : sacar los aviones que tienen distancia 0 o negativa a aeroparque. son los que llegaron.
-        ## if (m+1) % 60 ==0:
-        ##      cant_arribos_por_hora[simulacion][m//60]=cant_arribados
-        ##      cant_arribados=0
-    #
+        if (m+1) % 60 ==0:
+              cant_arribos_por_hora[simulacion][m//60]=cant_arribados
+              cant_aviones_a_montevideo[simulacion][m//60]=fueron_a_montevideo
+              cant_arribados=0
+              fueron_a_montevideo=0
 
-##cta b : agregar una col xa reigstrar lo de montevideo?!!!
 
-############################################################
-import pygame
-import random
-from typing import List
 
-# ====== Usa tu clase Avion y utilidades ======
+
+
 NM = 1.852  # km por milla náutica
 
 # --------- Colores por franja ----------
@@ -237,8 +253,11 @@ def draw_planes(screen, font, fila_aviones: List):
         #screen.blit(font.render(f"{v} kt", True, (200,200,200)), (x+10, y-10))
 
 def format_time_hhmm(total_minutes: float) -> str:
-    h = int(total_minutes // 60) + 6
-    m = int(total_minutes % 60)
+    mins = int(total_minutes)
+    # ciclo de 18h, arrancando a las 06:00
+    mins_in_window = mins % (18*60)       # 0..1079
+    h = 6 + mins_in_window // 60          # 6..23
+    m = mins_in_window % 60
     return f"{h:02d}:{m:02d}"
 
 def pygame_anim(sim_step_fn, get_fila_fn, fps=30, minutos_por_seg=2.0):
@@ -281,6 +300,9 @@ def pygame_anim(sim_step_fn, get_fila_fn, fps=30, minutos_por_seg=2.0):
 
     pygame.quit()
 
+    
+############################################################
+
 # =================== EJEMPLO MÍNIMO DE INTEGRACIÓN ===================
 # Esto es solo para mostrar cómo enchufarlo; reemplazalo por tu lógica real.
 class AvionDemo:
@@ -299,7 +321,6 @@ class AvionDemo:
 
 def demo():
     fila = [AvionDemo(300*NM, 100*NM, id=1)]
-    p = 1/60  # 1 arribo por hora
 
     contador_id = 2   # para asignar IDs únicos
 
@@ -320,3 +341,46 @@ def demo():
 
 if __name__ == "__main__":
     demo()
+
+
+
+###Guardado de parametros y matrices del archivo
+'''
+Ejemplo de como se estructurará:
+salidas_sim/
+├── run_p=0.0166_sim=10.json
+└── run_p=0.0083_sim=20.json
+'''
+def guardar_run_json(output_dir, params_dict,
+                     cant_arribos_por_hora,
+                     cant_aviones_a_montevideo):
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    p_val = params_dict.get("p", "x")
+    sim_val = params_dict.get("rangoSim", "x")
+
+    file_name = f"run_p={p_val}_sim={sim_val}.json"
+    file_path = Path(output_dir, file_name)
+
+    data = {
+        "parametros": params_dict,
+        "cant_arribos_por_hora": cant_arribos_por_hora.tolist(),
+        "cant_aviones_a_montevideo": cant_aviones_a_montevideo.tolist()
+    }
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print(f"[OK] Guardado {file_path}")
+
+params = {
+    "rangoSim": rangoSim,
+    "p": p
+}
+
+guardar_run_json(
+    output_dir="salidas_sim",    # carpeta donde guardar
+    params_dict=params,
+    cant_arribos_por_hora=cant_arribos_por_hora,
+    cant_aviones_a_montevideo=cant_aviones_a_montevideo
+)
