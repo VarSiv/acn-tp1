@@ -1,8 +1,5 @@
 import pygame
-import random
-from typing import List
-
-
+from typing import *
 NM = 1.852  # km por milla náutica
 
 # --------- Colores por franja ----------
@@ -40,13 +37,27 @@ def draw_planes(screen, font, fila_aviones: List):
         d = av.get_distancia()
         x = x_from_dist_km(d)
         y = y0 + i*dy
-        col = (230, 80, 80) if getattr(av, "en_retroceso", False) else color_por_dist(d)
-        #pygame.draw.circle(screen, col, (x, y), 7)
-        pygame.draw.polygon(screen, col, [(x, y), (x+15, y-8), (x+15, y+8)])
-        screen.blit(font.render(f"ID {av.id}", True, (255,255,0)), (x-15, y-20))
+        v = av.get_velocidad()
+        en_retroceso = False
+        if v<0:
+            en_retroceso = True
+        col = (255, 255, 255) if en_retroceso else color_por_dist(d)
+        # Cambiar dirección del polígono si va en retroceso
+        if en_retroceso:
+            # Punta a la izquierda
+            if av.get_distancia() < 100*1.852:
+                pygame.draw.polygon(screen, col, [(x, y), (x-15, y-8), (x-15, y+8)])
+                screen.blit(font.render(f"ID {av.id}", True, (255,255,0)), (x-15, y-20))
+        
+        else:
+            # Punta a la derecha
+            pygame.draw.polygon(screen, col, [(x, y), (x+15, y-8), (x+15, y+8)])
+            screen.blit(font.render(f"ID {av.id}", True, (255,255,0)), (x-15, y-20))
+        
+
+        
         # velocidad y distancia (opcional)
         v = int(av.get_velocidad()/NM)  # en kt
-        #screen.blit(font.render(f"{v} kt", True, (200,200,200)), (x+10, y-10))
 
 def format_time_hhmm(total_minutes: float) -> str:
     mins = int(total_minutes)
@@ -56,42 +67,3 @@ def format_time_hhmm(total_minutes: float) -> str:
     m = mins_in_window % 60
     return f"{h:02d}:{m:02d}"
 
-def pygame_anim(sim_step_fn, get_fila_fn, fps=30, minutos_por_seg=2.0):
-    """
-    sim_step_fn(delta_horas) -> ejecuta un paso de simulación (tu lógica)
-    get_fila_fn() -> devuelve la lista actual de aviones
-    fps: frames por segundo
-    minutos_por_seg: cuántos minutos simulados querés avanzar por segundo real
-    """
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("AEP – Visualización")
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("consolas", 16)
-
-    running = True
-    acc_time = 0.0  # minutos simulados acumulados
-    while running:
-        dt_ms = clock.tick(fps)
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT:
-                running = False
-
-        # avanzar simulación: dt real -> minutos simulados -> horas
-        minutos_sim = (dt_ms/1000.0) * minutos_por_seg
-        delta_h = minutos_sim / 60.0
-
-        sim_step_fn(delta_h)   # <-- acá llamás tu paso de simulación
-
-        acc_time += minutos_sim
-
-        # dibujar
-        screen.fill((20, 22, 28))
-        draw_marks(screen, font)
-        draw_planes(screen, font, get_fila_fn())
-        # Mostrar hora simulada
-        hora_str = format_time_hhmm(acc_time)
-        screen.blit(font.render(f"Hora simulada: {hora_str}", True, (255,255,255)), (WIDTH-220, 20))
-        pygame.display.flip()
-
-    pygame.quit()

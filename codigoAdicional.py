@@ -31,3 +31,9 @@ class Avion:
             elif d > 5*1.852:      self.velocidad = 200*1.852
             else:                  self.velocidad = 150*1.852
 '''
+
+
+#para printear
+""" for avion in fila_aviones:
+            print("Simulacion:",simulacion, " minuto:",m, " avion:",avion.id, " velocidad:",avion.get_velocidad())
+        print("-"*20) """
