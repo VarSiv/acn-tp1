@@ -18,7 +18,7 @@ Cosas para chequear:
 def guardar_run_json(output_dir, params_dict,
                      cant_arribos_por_hora,
                      cant_aviones_a_montevideo,
-                     cant_detectados_por_hora):
+                     cant_detectados_por_hora, cant_congestion_por_hora):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     p_val = params_dict.get("p", "x")
@@ -31,16 +31,14 @@ def guardar_run_json(output_dir, params_dict,
         "parametros": params_dict,
         "cant_arribos_por_hora": cant_arribos_por_hora.tolist(),
         "cant_aviones_a_montevideo": cant_aviones_a_montevideo.tolist(),
-        "cant_detectados_por_hora": cant_detectados_por_hora.tolist()
+        "cant_detectados_por_hora": cant_detectados_por_hora.tolist(),
+        "cant_congestion_por_hora": np.asarray(cant_congestion_por_hora).tolist()
     }
 
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
     print(f"[OK] Guardado {file_path}")
-
-
-
 
 
 class Avion:
@@ -69,7 +67,7 @@ class Avion:
     def set_distancia(self, dist:float):
         self.distancia=dist
         return
-    def set_distancia(self, congestion:bool):
+    def set_congestion(self, congestion:bool):
         self.congestion=congestion
         return
     def get_congestion(self):
@@ -158,16 +156,36 @@ def debajo_minimo_de_franja(avion):
         ret = True
     return ret
 
+def marcar_congestion(av, ids_congestionados: set) -> bool:
+    """
+    Si el avión nunca había tenido congestión, lo marca (flag histórico)
+    y devuelve True. Si ya estaba marcado, devuelve False.
+    """
+    if not av.get_congestion():
+        av.set_congestion(True)        # flag histórico en el objeto
+        ids_congestionados.add(av.id)  # set para deduplicar por simulación
+        return True
+    return False
+
 franjas_y_vel_maxima={1:150*1.852, 2:200*1.852,3:250*1.852,4:300*1.852,5:500*1.852}
-def reubicar(fila_aviones, deben_ser_reubicados):
+def reubicar(fila_aviones, deben_ser_reubicados, ids_congestionados):
+    """
+    Aplica reubicación y devuelve la cantidad de aviones que
+    quedaron marcados en congestión por PRIMERA VEZ en este minuto.
+    """
     aviones_que_se_eliminan=[]
 
     for i in deben_ser_reubicados:
-        fila_aviones[i].set_velocidad((fila_aviones[i].get_velocidad() - 20*1.852))      
+        fila_aviones[i].set_velocidad((fila_aviones[i].get_velocidad() - 20*1.852))
+        # Si cae por debajo del mínimo ⇒ retroceso
         if(debajo_minimo_de_franja(fila_aviones[i])):
             fila_aviones[i].set_velocidad(-200*1.852)
-        else: 
-            fila_aviones[i].set_congestion(True)
+        else:
+            # BAJA por congestión: -20 kt ⇒ marca 1 sola vez
+            if fila_aviones[i].get_velocidad() >= 0 and not fila_aviones[i].get_congestion():
+                fila_aviones[i].set_congestion(True)
+                ids_congestionados.add(fila_aviones[i].id) 
+            
                                                 
         if not (i==0 or i==len(fila_aviones)-1): 
             if((fila_aviones[i+1].get_tiempoAep()-fila_aviones[i].get_tiempoAep())>5 and fila_aviones[i].get_tiempoAep()-fila_aviones[i-1].get_tiempoAep()>5):
@@ -200,6 +218,7 @@ for p in lambdas:
     cant_arribos_por_hora = np.zeros((rangoSim, rangoHorario)) 
     cant_aviones_a_montevideo = np.zeros((rangoSim, rangoHorario)) 
     cant_detectados_por_hora = np.zeros((rangoSim, rangoHorario))   
+    cant_congestion_por_hora =  np.zeros((rangoSim, rangoHorario),  dtype=int)
 
     for simulacion in range(rangoSim):  
         print("arranca simulacion numero:", simulacion)
@@ -208,7 +227,8 @@ for p in lambdas:
         acc_time = 0
         cant_detectados=0
         fueron_a_montevideo=0
-
+        ids_congestionados = set()   # guardamos todos los que ALGUNA VEZ bajaron vel (AEP o MVD)
+        prev_cong_size = 0
         for m in range(round(rangoHorario/(1/60))):
             # 1) actualizar todos
             llegados=[]
@@ -235,7 +255,7 @@ for p in lambdas:
             # 3) reubicar si hace falta
             distancias, deben_ser_reubicados = calcular_dist_entre_aviones(fila_aviones) 
             pre_montevideo=len(fila_aviones)
-            reubicar(fila_aviones, deben_ser_reubicados)
+            reubicar(fila_aviones, deben_ser_reubicados, ids_congestionados)
             fueron_a_montevideo += (pre_montevideo-len(fila_aviones))
             
             for idx, avion in enumerate(fila_aviones):
@@ -248,9 +268,16 @@ for p in lambdas:
                 cant_arribos_por_hora[simulacion][h]=cant_arribados
                 cant_aviones_a_montevideo[simulacion][h]=fueron_a_montevideo
                 cant_detectados_por_hora[simulacion][h]=cant_detectados
+                nuevos = len(ids_congestionados) - prev_cong_size #calculamos la diferencia de los total de congestionados - ya contamos= nuevos congestionados
+                cant_congestion_por_hora[simulacion, h] = max(0, nuevos)  
+                prev_cong_size = len(ids_congestionados)
+
+                #Seteamos en 0 todo lo necesairo
                 cant_arribados=0
                 fueron_a_montevideo=0
                 cant_detectados=0
+
+                
 
     pygame.quit()
     params = {
@@ -264,6 +291,7 @@ for p in lambdas:
         cant_arribos_por_hora=cant_arribos_por_hora,
         cant_aviones_a_montevideo=cant_aviones_a_montevideo,
         cant_detectados_por_hora=cant_detectados_por_hora,
+        cant_congestion_por_hora=cant_congestion_por_hora
         
     )
 
