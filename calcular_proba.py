@@ -37,7 +37,7 @@ print("exacta:",res2, "nuestra:" ,res1)
 #
 #
 def se_mean(x):
-    x = np.asarray(x).ravel()
+    x = np.asarray(x).ravel() /60
     n = x.size
     mean = x.mean()
     se = x.std(ddof=1) / math.sqrt(n) if n > 1 else float("nan")
@@ -92,7 +92,9 @@ def main():
         total_cong = C_f.sum()
         total_mvd = M_f.sum()
 
+        # ¿Aumenta λ la frecuencia de congestiones? ¿Se ve gráficamente?
         p_cong_per_detect, se_cong_per_detect, n_cd = se_prop(total_cong, total_detect)
+        
         p_mvd_per_detect, se_mvd_per_detect, n_md = se_prop(total_mvd, total_detect)    
 
         rows.append(dict(
@@ -132,7 +134,7 @@ def main():
     plt.figure()
     plt.plot(df["lambda_"], df["mean_congestion_hora"], marker="o")
     plt.xlabel("λ (prob. de llegada por minuto)")
-    plt.ylabel("Eventos de congestión por hora (promedio)")
+    plt.ylabel("'%'de minutos con congestión")
     plt.title("Congestión vs λ")
     plt.grid(True)
     plt.savefig("plots/plot_congestion_vs_lambda.png", bbox_inches="tight")
