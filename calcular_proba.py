@@ -43,6 +43,18 @@ def se_prop(k, n):
     se = math.sqrt(p * (1 - p) / n)
     return p, se, n
 
+def se_mean(x):
+
+    x = np.asarray(x).ravel()
+
+    n = x.size
+
+    mean = x.mean() if n>0 else float("nan")
+
+    se = x.std(ddof=1)/math.sqrt(n) if n>1 else float("nan")
+
+    return mean, se, n
+
 def load_run(path: Path):
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
@@ -51,7 +63,8 @@ def load_run(path: Path):
     D = np.asarray(data["cant_detectados_por_hora"])
     M = np.asarray(data["cant_aviones_a_montevideo"])
     C = np.asarray(data["cant_congestion_por_hora"])
-    return p, A, D, M, C
+    Atraso = np.asarray(data["cant_retraso_por_hora"])
+    return p, A, D, M, C,Atraso
 
 def main():
     rows = [] 
@@ -63,11 +76,10 @@ def main():
         Path("salidas_sim/run_p=0.5_sim=100000.json")
     ]
     for fp in runs:
-        p, A, D, M, C = load_run(fp)
-        A_f, D_f, M_f, C_f = A.ravel(), D.ravel(), M.ravel(), C.ravel()
+        p, A, D, M, C, R = load_run(fp)
+        A_f, D_f, M_f, C_f, R_f = A.ravel(), D.ravel(), M.ravel(), C.ravel(),R.ravel()
 
         # Prob de ≥1 minuto con congestión en la hora
-        cong_any = (C_f > 0).astype(int)
         cong_any = (C_f > 0).astype(int)
 
         print(f"\nλ={p}")
@@ -81,9 +93,20 @@ def main():
         total_detect = D_f.sum()
         total_cong_min = C_f.sum()
         total_mvd = M_f.sum()
+        
         p_cong_per_detect, se_cong_per_detect, n_cd = se_prop(total_cong_min, total_detect)
         p_mvd_per_detect, se_mvd_per_detect, n_md = se_prop(total_mvd, total_detect)
-
+        
+        # Atraso promedio por avión
+        # (a) razón total/total
+        atraso_promedio_global = (R.sum() / A.sum()) if A.sum() > 0 else float("nan")
+        # (b) media ± SE entre simulaciones
+        A_tot_sim = A.sum(axis=1)
+        R_tot_sim = R.sum(axis=1)
+        ok = (A_tot_sim > 0)
+        per_sim_delay = R_tot_sim[ok] / A_tot_sim[ok]
+        atraso_mean, atraso_se, n_rep = se_mean(per_sim_delay)
+        
         rows.append(dict(
         lambda_=p,
         # ¿hubo ≥1 avión en congestión en la hora?
@@ -92,7 +115,9 @@ def main():
         # Tasas por avión detectado
         prob_congestion_por_detectado=p_cong_per_detect, se_cong_por_detect=se_cong_per_detect, n_cd=n_cd,
         prob_mvd_por_detectado=p_mvd_per_detect, se_mvd_por_detect=se_mvd_per_detect, n_md=n_md,
-
+        # Atraso promedio (min) vs 23.4 (sin congestión)
+        atraso_promedio_por_avion=atraso_mean,    # preferido para reportar con SE
+        se_atraso_por_avion=atraso_se,
         file=fp.name
 ))
 
@@ -109,6 +134,8 @@ def main():
 
     # % de aviones detectados que se desviaron a MVD
     "prob_mvd_por_detectado", "se_mvd_por_detect",
+
+    "atraso_promedio_por_avion", "se_atraso_por_avion",
 
     "file",
 ]
@@ -150,7 +177,18 @@ def main():
     plt.grid(True)
     plt.savefig("plots/plot_mvd_vs_lambda.png", bbox_inches="tight")
 
+
+   # 4) Atraso promedio por avión (min) vs λ
+    plt.figure()
+    plt.plot(df["lambda_"], df["atraso_promedio_por_avion"], marker="o")
+    plt.xlabel("λ (probabilidad de llegada por minuto)")
+    plt.ylabel("Atraso promedio (min por avión llegado)")
+    plt.title("Atraso promedio vs λ (respecto a 23.4 min sin congestión)")
+    plt.grid(True)
+    plt.savefig("plots/plot_atraso_vs_lambda.png", bbox_inches="tight")
+ 
     print("\nExporté: plot_congestion_vs_lambda.png, plot_prob_congestion_vs_lambda.png, plot_mvd_vs_lambda.png")
+    
 
 
 if __name__ == "__main__":
