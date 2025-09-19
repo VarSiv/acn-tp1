@@ -6,7 +6,7 @@ import numpy as np
 import json
 from pathlib import Path
 import sys
-from tp_copy import *
+from tp import *
 
 # ========================
 # PARÁMETROS DE SIMULACIÓN

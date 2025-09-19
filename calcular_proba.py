@@ -69,11 +69,11 @@ def load_run(path: Path):
 def main():
     rows = [] 
     runs = [
-        Path("salidas_sim/run_p=0.02_sim=100000.json"),
-        Path("salidas_sim/run_p=0.1_sim=100000.json"),
-        Path("salidas_sim/run_p=1_sim=100000.json"),
-        Path("salidas_sim/run_p=0.2_sim=100000.json"),
-        Path("salidas_sim/run_p=0.5_sim=100000.json")
+        Path("salidas_sim/run_p=0.02_sim=50000.json"),
+        Path("salidas_sim/run_p=0.1_sim=50000.json"),
+        Path("salidas_sim/run_p=1_sim=50000.json"),
+        Path("salidas_sim/run_p=0.2_sim=50000.json"),
+        Path("salidas_sim/run_p=0.5_sim=50000.json")
     ]
     for fp in runs:
         p, A, D, M, C, R = load_run(fp)
